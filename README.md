@@ -15,6 +15,18 @@ Ele encontra:
 
 ## Como usar no Windows
 
+### Jeito mais fácil: executável
+
+Dê dois cliques em **`FotosDuplicadas.exe`**. Não precisa ter Python
+instalado. (Se você só tem o código, gere o .exe com **`Gerar executavel.bat`**,
+que precisa de Python na primeira vez.)
+
+O Windows pode mostrar "O Windows protegeu o computador" na primeira vez,
+porque o programa não é assinado digitalmente. Clique em **Mais informações →
+Executar assim mesmo**.
+
+### Pelo Python
+
 1. Instale o Python 3.10 ou mais novo em <https://www.python.org/downloads/>.
    Na instalação, marque **"Add python.exe to PATH"**.
 2. Dê dois cliques em **`Abrir Fotos Duplicadas.bat`**.
