@@ -17,7 +17,7 @@ from PySide6.QtCore import QObject, QPointF, QRectF, QSize, Qt, QThread, Signal
 from PySide6.QtGui import (QBrush, QColor, QFont, QIcon, QImage, QLinearGradient, QPainter,
                            QPainterPath, QPen, QPixmap, QRadialGradient)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QFileDialog,
-                               QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QHeaderView,
+                               QFrame, QHBoxLayout, QHeaderView,
                                QLabel, QListWidget, QMainWindow, QMessageBox, QProgressBar,
                                QPushButton, QSizePolicy, QSplitter, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
@@ -34,74 +34,74 @@ OPCOES_SENS = {
 RAIO = 22
 
 ESTILO = """
-* { color: #F4F7FF; font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Inter', sans-serif; font-size: 10pt; }
+* { color: #1C1C1E; font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Inter', sans-serif; font-size: 10pt; }
 QLabel#titulo { font-size: 20pt; font-weight: 600; }
-QLabel#subtitulo { color: rgba(244,247,255,0.70); }
-QLabel#rotulo { color: rgba(244,247,255,0.75); font-weight: 600; }
-QLabel#status, QLabel#detalhe, QLabel#resumo { color: rgba(244,247,255,0.85); }
+QLabel#subtitulo { color: rgba(28,28,30,0.60); }
+QLabel#rotulo { color: rgba(28,28,30,0.55); font-weight: 600; font-size: 9pt; }
+QLabel#status, QLabel#detalhe, QLabel#resumo { color: rgba(28,28,30,0.75); }
 
 QPushButton {
-    background: rgba(255,255,255,0.12);
-    border: 1px solid rgba(255,255,255,0.28);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255,255,255,0.85), stop:1 rgba(255,255,255,0.55));
+    border: 1px solid rgba(255,255,255,0.95);
+    border-bottom: 1px solid rgba(0,0,0,0.10);
     border-radius: 16px; padding: 7px 16px;
 }
-QPushButton:hover { background: rgba(255,255,255,0.22); }
-QPushButton:pressed { background: rgba(255,255,255,0.08); }
-QPushButton:disabled { color: rgba(244,247,255,0.35); }
+QPushButton:hover { background: rgba(255,255,255,0.95); }
+QPushButton:pressed { background: rgba(235,235,240,0.80); }
+QPushButton:disabled { color: rgba(28,28,30,0.35); }
 QPushButton#destaque {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(120,170,255,0.85), stop:1 rgba(170,110,255,0.85));
-    border: 1px solid rgba(255,255,255,0.45); font-weight: 600;
+    color: white; font-weight: 600;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(70,70,76,0.92), stop:1 rgba(28,28,30,0.92));
+    border: 1px solid rgba(255,255,255,0.35);
 }
 QPushButton#destaque:hover {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(140,185,255,0.95), stop:1 rgba(185,130,255,0.95));
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(90,90,96,0.95), stop:1 rgba(44,44,48,0.95));
 }
 
 QListWidget, QTreeWidget {
-    background: rgba(10,14,35,0.22);
-    border: 1px solid rgba(255,255,255,0.14); border-radius: 14px; padding: 4px;
+    background: rgba(255,255,255,0.40);
+    border: 1px solid rgba(255,255,255,0.75); border-radius: 14px; padding: 4px;
     outline: 0;
 }
 QTreeWidget::item, QListWidget::item { padding: 4px 2px; border-radius: 8px; }
-QTreeWidget::item:selected, QListWidget::item:selected { background: rgba(140,180,255,0.35); }
-QTreeWidget::item:hover, QListWidget::item:hover { background: rgba(255,255,255,0.08); }
-QTreeView::branch:selected, QTreeView::branch:hover { background: transparent; }
+QTreeWidget::item:selected, QListWidget::item:selected { background: rgba(0,0,0,0.10); color: #1C1C1E; }
+QTreeWidget::item:hover, QListWidget::item:hover { background: rgba(0,0,0,0.04); }
+QTreeView::branch, QTreeView::branch:selected, QTreeView::branch:hover { background: transparent; }
 QHeaderView { background: transparent; border: none; }
 QHeaderView::section {
-    background: transparent; color: rgba(244,247,255,0.70); font-weight: 600;
-    border: none; border-bottom: 1px solid rgba(255,255,255,0.15); padding: 6px 4px;
+    background: transparent; color: rgba(28,28,30,0.55); font-weight: 600;
+    border: none; border-bottom: 1px solid rgba(0,0,0,0.08); padding: 6px 4px;
 }
 QTreeWidget::indicator { width: 16px; height: 16px; border-radius: 5px;
-    border: 1px solid rgba(255,255,255,0.55); background: rgba(255,255,255,0.08); }
-QTreeWidget::indicator:checked { border: 1px solid rgba(255,255,255,0.8);
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #7FB2FF, stop:1 #C08CFF);
-    image: url(%MARCA%); }
+    border: 1px solid rgba(0,0,0,0.30); background: rgba(255,255,255,0.75); }
+QTreeWidget::indicator:checked { border: 1px solid rgba(0,0,0,0.6);
+    background: #2C2C2E; image: url(%MARCA%); }
 
 QComboBox {
-    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.28);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255,255,255,0.85), stop:1 rgba(255,255,255,0.55));
+    border: 1px solid rgba(255,255,255,0.95); border-bottom: 1px solid rgba(0,0,0,0.10);
     border-radius: 14px; padding: 6px 14px;
 }
 QComboBox::drop-down { border: none; width: 24px; }
 QComboBox QAbstractItemView {
-    background: #1d2347; border: 1px solid rgba(255,255,255,0.25); border-radius: 10px;
-    selection-background-color: rgba(140,180,255,0.45); padding: 4px;
+    background: #F7F7F9; border: 1px solid rgba(0,0,0,0.12); border-radius: 10px;
+    selection-background-color: rgba(0,0,0,0.08); selection-color: #1C1C1E; padding: 4px;
 }
 
 QProgressBar {
-    background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.45); border: 1px solid rgba(255,255,255,0.85);
     border-radius: 7px; height: 14px; text-align: center; color: transparent;
 }
-QProgressBar::chunk {
-    border-radius: 6px;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7FB2FF, stop:1 #C08CFF);
-}
+QProgressBar::chunk { border-radius: 6px; background: rgba(44,44,46,0.80); }
 
-QSplitter::handle { background: transparent; width: 12px; }
+QSplitter::handle { background: transparent; }
 QScrollBar:vertical { background: transparent; width: 10px; margin: 4px; }
-QScrollBar::handle:vertical { background: rgba(255,255,255,0.25); border-radius: 4px; min-height: 30px; }
+QScrollBar::handle:vertical { background: rgba(0,0,0,0.22); border-radius: 4px; min-height: 30px; }
 QScrollBar:horizontal { background: transparent; height: 10px; margin: 4px; }
-QScrollBar::handle:horizontal { background: rgba(255,255,255,0.25); border-radius: 4px; min-width: 30px; }
+QScrollBar::handle:horizontal { background: rgba(0,0,0,0.22); border-radius: 4px; min-width: 30px; }
 QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page { background: none; border: none; }
-QToolTip { background: #1d2347; color: white; border: 1px solid rgba(255,255,255,0.3); }
+QToolTip { background: #F7F7F9; color: #1C1C1E; border: 1px solid rgba(0,0,0,0.15); }
+QMessageBox, QFileDialog { background: #F2F2F5; }
 """
 
 
@@ -112,12 +112,13 @@ QToolTip { background: #1d2347; color: white; border: 1px solid rgba(255,255,255
 class FundoLiquido(QWidget):
     """Fundo com manchas de cor; guarda também uma versão desfocada para o vidro."""
 
-    MANCHAS = [  # (x, y, raio relativo, cor)
-        (0.12, 0.18, 0.55, QColor(70, 120, 255)),
-        (0.88, 0.12, 0.50, QColor(190, 80, 255)),
-        (0.75, 0.90, 0.60, QColor(0, 200, 200)),
-        (0.20, 0.95, 0.45, QColor(255, 90, 160)),
-        (0.50, 0.50, 0.40, QColor(90, 70, 220)),
+    # manchas neutras (branco e cinza), só para o vidro ter o que refratar
+    MANCHAS = [  # (x, y, raio relativo, cor, opacidade)
+        (0.10, 0.15, 0.50, QColor(255, 255, 255), 230),
+        (0.90, 0.10, 0.45, QColor(200, 202, 210), 200),
+        (0.80, 0.92, 0.55, QColor(255, 255, 255), 220),
+        (0.18, 0.92, 0.40, QColor(185, 188, 196), 170),
+        (0.50, 0.45, 0.35, QColor(255, 255, 255), 160),
     ]
 
     def __init__(self) -> None:
@@ -130,15 +131,15 @@ class FundoLiquido(QWidget):
         p = QPainter(img)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         g = QLinearGradient(0, 0, tamanho.width(), tamanho.height())
-        g.setColorAt(0, QColor(14, 18, 48))
-        g.setColorAt(1, QColor(28, 14, 52))
+        g.setColorAt(0, QColor(232, 233, 238))
+        g.setColorAt(1, QColor(214, 216, 223))
         p.fillRect(img.rect(), g)
         lado = max(tamanho.width(), tamanho.height())
-        for x, y, r, cor in self.MANCHAS:
+        for x, y, r, cor, alfa in self.MANCHAS:
             c = QPointF(x * tamanho.width(), y * tamanho.height())
             rg = QRadialGradient(c, r * lado)
             c1, c2 = QColor(cor), QColor(cor)
-            c1.setAlpha(170)
+            c1.setAlpha(alfa)
             c2.setAlpha(0)
             rg.setColorAt(0, c1)
             rg.setColorAt(1, c2)
@@ -175,11 +176,6 @@ class PainelVidro(QFrame):
         self.fundo_ref = fundo
         self.raio = raio
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
-        sombra = QGraphicsDropShadowEffect(self)
-        sombra.setBlurRadius(40)
-        sombra.setOffset(0, 10)
-        sombra.setColor(QColor(0, 0, 0, 90))
-        self.setGraphicsEffect(sombra)
 
     def paintEvent(self, _ev) -> None:  # noqa: N802
         p = QPainter(self)
@@ -195,21 +191,28 @@ class PainelVidro(QFrame):
             p.drawPixmap(0, 0, self.fundo_ref.desfocado,
                          origem.x(), origem.y(), self.width(), self.height())
         # 2) leve tom branco (vidro fosco)
-        p.fillRect(self.rect(), QColor(255, 255, 255, 30))
+        p.fillRect(self.rect(), QColor(255, 255, 255, 105))
         # 3) brilho "líquido" na parte de cima
         brilho = QLinearGradient(0, 0, 0, self.height())
-        brilho.setColorAt(0.0, QColor(255, 255, 255, 60))
-        brilho.setColorAt(0.25, QColor(255, 255, 255, 12))
+        brilho.setColorAt(0.0, QColor(255, 255, 255, 120))
+        brilho.setColorAt(0.25, QColor(255, 255, 255, 25))
         brilho.setColorAt(1.0, QColor(255, 255, 255, 0))
         p.fillRect(self.rect(), brilho)
         p.setClipping(False)
         # 4) contorno: mais claro em cima, sumindo embaixo
         borda = QLinearGradient(0, 0, 0, self.height())
-        borda.setColorAt(0, QColor(255, 255, 255, 140))
-        borda.setColorAt(1, QColor(255, 255, 255, 35))
-        p.setPen(QPen(QBrush(borda), 1.2))
+        borda.setColorAt(0, QColor(255, 255, 255, 255))
+        borda.setColorAt(1, QColor(255, 255, 255, 120))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawPath(caminho)
+        # contorno externo bem discreto (dá volume sem sombra)
+        externo = QPainterPath()
+        externo.addRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), self.raio, self.raio)
+        p.setPen(QPen(QColor(0, 0, 0, 28), 1))
+        p.drawPath(externo)
+        interno = QPainterPath()
+        interno.addRoundedRect(QRectF(self.rect()).adjusted(1.5, 1.5, -1.5, -1.5), self.raio - 1, self.raio - 1)
+        p.setPen(QPen(QBrush(borda), 1.4))
+        p.drawPath(interno)
 
 
 # --------------------------------------------------------------------------
@@ -222,7 +225,7 @@ class Previa(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumSize(200, 200)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
-        self.setStyleSheet("color: rgba(244,247,255,0.6);")
+        self.setStyleSheet("color: rgba(28,28,30,0.45);")
         self._original: QPixmap | None = None
 
     def mostrar(self, caminho: Path | None) -> None:
@@ -373,7 +376,7 @@ class Janela(QMainWindow):
         self.sens = QComboBox()
         self.sens.addItems(list(OPCOES_SENS))
         self.sens.setCurrentIndex(2)
-        self.btn_procurar = _botao("🔍  Procurar duplicadas", destaque=True)
+        self.btn_procurar = _botao("Procurar duplicadas", destaque=True)
         self.btn_procurar.setMinimumHeight(38)
         self.btn_procurar.clicked.connect(self._procurar)
         col_busca.addWidget(rs)
@@ -396,6 +399,7 @@ class Janela(QMainWindow):
         # ---- meio: lista de grupos + prévia
         div = QSplitter(Qt.Orientation.Horizontal)
         div.setChildrenCollapsible(False)
+        div.setHandleWidth(16)
 
         p_lista = PainelVidro(self.fundo)
         ll = QVBoxLayout(p_lista)
@@ -525,7 +529,7 @@ class Janela(QMainWindow):
             self.thread.quit()
             self.thread.wait()
         self.thread, self.trab = None, None
-        self.btn_procurar.setText("🔍  Procurar duplicadas")
+        self.btn_procurar.setText("Procurar duplicadas")
         return cancelado
 
     def _falhou(self, msg: str) -> None:
@@ -565,7 +569,9 @@ class Janela(QMainWindow):
                 it.setCheckState(0, Qt.CheckState.Checked if (marcar and not manter) else Qt.CheckState.Unchecked)
                 it.setToolTip(0, "Sugestão: MANTER (maior resolução)" if manter else "Sugestão: mover")
                 if manter:
-                    it.setForeground(0, QColor(150, 230, 180))
+                    f = it.font(0)
+                    f.setBold(True)
+                    it.setFont(0, f)
                 gi.addChild(it)
             gi.setExpanded(True)
         self.arvore.blockSignals(False)
@@ -730,26 +736,16 @@ def main() -> None:
             pass
     app = QApplication.instance() or QApplication(sys.argv)
     app.setStyle("Fusion")
+    from PySide6.QtGui import QPalette
+    pal = app.palette()
+    pal.setColor(QPalette.ColorRole.Highlight, QColor(0, 0, 0, 26))
+    pal.setColor(QPalette.ColorRole.HighlightedText, QColor(28, 28, 30))
+    app.setPalette(pal)
     app.setStyleSheet(ESTILO.replace("%MARCA%", _marca_de_verificacao()))
     app.setWindowIcon(_icone())
     j = Janela()
     j.show()
-    if sys.platform.startswith("win"):
-        _barra_escura(j)
     app.exec()
-
-
-def _barra_escura(janela: QMainWindow) -> None:
-    """Deixa a barra de título escura no Windows 10/11 (combina com o vidro)."""
-    try:
-        import ctypes
-        hwnd = int(janela.winId())
-        valor = ctypes.c_int(1)
-        for attr in (20, 19):  # DWMWA_USE_IMMERSIVE_DARK_MODE (novo e antigo)
-            if ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(valor), 4) == 0:
-                break
-    except Exception:
-        pass
 
 
 if __name__ == "__main__":
