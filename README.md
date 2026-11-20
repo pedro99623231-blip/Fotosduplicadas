@@ -35,10 +35,14 @@ Ele encontra:
 
 | Opção | O que encontra |
 |---|---|
-| Somente cópias idênticas | Só arquivos exatamente iguais. Zero falsos positivos. |
-| Rigorosa | A mesma foto em outro formato/tamanho. |
-| Normal (padrão) | Equilíbrio entre encontrar tudo e não juntar fotos diferentes. |
-| Ampla | Também pega edições leves (brilho, marca d'água pequena). Pode juntar fotos muito parecidas tiradas em sequência; revise com atenção. |
+| Somente cópias idênticas | Só arquivos exatamente iguais byte a byte. |
+| Rigorosa | A mesma foto em outro formato ou tamanho. |
+| Normal (padrão) | A mesma foto, inclusive versões bem comprimidas (ex.: WhatsApp). |
+| Ampla | Tolera compressão muito pesada. Revise os grupos com cuidado. |
+
+Fotos **tiradas em sequência** (a pessoa mexeu, a câmera tremeu, a luz mudou)
+**não** são consideradas duplicadas em nenhuma das opções: cada par suspeito é
+confirmado comparando as duas imagens bloco a bloco.
 
 ## Linha de comando (opcional)
 
@@ -58,8 +62,11 @@ Ele encontra:
    imagem reduzida em tons de cinza, respeitando a rotação EXIF. Imagens que
    são a mesma foto têm hashes quase iguais, independentemente de nome,
    formato, tamanho ou compressão.
-4. Junta em grupos as imagens cujos dois hashes diferem em poucos bits
-   (usando uma árvore BK, então funciona bem com dezenas de milhares de fotos).
+4. Os hashes só apontam **candidatas** (usando uma árvore BK, então funciona
+   bem com dezenas de milhares de fotos). Cada par candidato precisa ter a
+   mesma proporção e passar por uma **confirmação**: as duas imagens são
+   reduzidas para 64x64 e comparadas em blocos de 4x4 pixels. Se qualquer
+   bloco mudou (um braço que mexeu, um rosto que virou), não é duplicada.
 5. Em cada grupo, sugere manter a de maior resolução (depois a maior em bytes).
 
 ## Desenvolvimento

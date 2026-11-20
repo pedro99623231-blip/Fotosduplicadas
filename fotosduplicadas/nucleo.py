@@ -4,9 +4,16 @@ Duas técnicas são combinadas:
 
 1. **Hash exato (SHA-256)** do conteúdo do arquivo: encontra cópias idênticas
    byte a byte, mesmo com nomes diferentes.
-2. **Hash perceptual (dHash + aHash, 64 bits cada)** calculado sobre a imagem
-   reduzida e em tons de cinza: encontra a *mesma foto* salva em outro formato
-   (JPG x PNG x WEBP...), redimensionada ou recomprimida.
+2. **Comparação visual** da *mesma foto* salva em outro formato (JPG x PNG x
+   WEBP...), redimensionada ou recomprimida. Funciona em duas etapas:
+
+   a. um hash perceptual (dHash + aHash, 64 bits) encontra rapidamente
+      *candidatas* parecidas;
+   b. cada par de candidatas é confirmado comparando miniaturas 64x64 em
+      blocos de 4x4 pixels: se QUALQUER bloco tiver diferença acima do limite,
+      as fotos são consideradas diferentes. Isso separa fotos tiradas em
+      sequência (alguém mexeu o braço, a câmera tremeu, a luz mudou), que o
+      hash de 64 bits sozinho confunde com duplicadas.
 
 Nenhuma função deste módulo apaga arquivos. A única operação que mexe em
 arquivos é :func:`mover_para_pasta`, que apenas move (nunca apaga) e precisa
@@ -23,7 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageFilter, ImageOps
 
 try:  # suporte opcional a fotos de iPhone (.heic)
     from pillow_heif import register_heif_opener  # type: ignore
@@ -42,12 +49,22 @@ EXTENSOES = {
 if _HEIC:
     EXTENSOES |= {".heic", ".heif"}
 
-# Distância de Hamming máxima (em 64 bits) para considerar duas imagens iguais.
+# Diferença máxima permitida (0 a 255) na média de qualquer bloco 4x4 da
+# miniatura 64x64. Calibrado assim: a mesma foto recomprimida/reduzida (até
+# 320x240 em JPEG qualidade 30) fica em ~2; fotos em sequência (pessoa
+# mexendo, tremida de 1 a 4 px, mudança de exposição) ficam em 7 ou mais.
 SENSIBILIDADE = {
-    "rigorosa": 4,   # quase só a mesma imagem em outro formato/tamanho
-    "normal": 8,     # bom equilíbrio (padrão)
-    "ampla": 12,     # pega edições leves, mas pode juntar fotos parecidas
+    "rigorosa": 3,   # só a mesma foto em outro formato/tamanho
+    "normal": 4,     # padrão: mesma foto, inclusive versões bem comprimidas
+    "ampla": 6,      # tolera compressão pesada; pode juntar fotos de sequência
 }
+
+# Etapa de candidatas (hash de 64 bits). Folgado de propósito: a decisão
+# final é feita pela comparação de miniaturas.
+LIMITE_CANDIDATAS = 12
+LADO_MINIATURA = 64
+LADO_BLOCO = 4
+TOLERANCIA_PROPORCAO = 0.02  # 2% de diferença entre largura/altura
 
 
 @dataclass
@@ -60,6 +77,7 @@ class InfoImagem:
     sha256: str = ""
     dhash: int | None = None
     ahash: int | None = None
+    proporcao: float = 0.0  # largura/altura já considerando a rotação EXIF
     erro: str = ""
 
     @property
@@ -141,15 +159,23 @@ def _bits_para_int(bits: Iterable[bool]) -> int:
     return v
 
 
-def hashes_perceptuais(img: Image.Image) -> tuple[int, int]:
-    """Retorna (dHash, aHash) de 64 bits de uma imagem PIL."""
+def _cinza(img: Image.Image) -> Image.Image:
+    """Imagem em tons de cinza, na orientação correta e sem transparência."""
     img = ImageOps.exif_transpose(img)  # respeita a rotação gravada pela câmera
-    if img.mode in ("RGBA", "LA", "P"):
+    if img.mode in ("RGBA", "LA", "P", "PA"):
         # fundo branco para transparências, para PNG e JPG baterem
         img = img.convert("RGBA")
         fundo = Image.new("RGBA", img.size, (255, 255, 255, 255))
         img = Image.alpha_composite(fundo, img)
-    cinza = img.convert("L")
+    return img.convert("L")
+
+
+def hashes_perceptuais(img: Image.Image) -> tuple[int, int]:
+    """Retorna (dHash, aHash) de 64 bits de uma imagem PIL."""
+    return _hashes_de_cinza(_cinza(img))
+
+
+def _hashes_de_cinza(cinza: Image.Image) -> tuple[int, int]:
 
     d = cinza.resize((9, 8), Image.Resampling.LANCZOS)
     pd = list(d.tobytes())
@@ -174,7 +200,9 @@ def analisar_arquivo(caminho: Path, perceptual: bool = True) -> InfoImagem:
             info.largura, info.altura = img.size
             img.draft("L", (256, 256))  # acelera muito JPGs grandes
             if perceptual:
-                info.dhash, info.ahash = hashes_perceptuais(img)
+                cinza = _cinza(img)
+                info.proporcao = cinza.width / cinza.height
+                info.dhash, info.ahash = _hashes_de_cinza(cinza)
     except Exception as e:  # arquivo corrompido, sem permissão etc.
         info.erro = f"{type(e).__name__}: {e}"
     return info
@@ -183,6 +211,26 @@ def analisar_arquivo(caminho: Path, perceptual: bool = True) -> InfoImagem:
 # --------------------------------------------------------------------------
 # Agrupamento
 # --------------------------------------------------------------------------
+
+def miniatura(caminho: Path) -> Image.Image:
+    """Miniatura 64x64 em tons de cinza usada para confirmar duplicadas."""
+    with Image.open(caminho) as img:
+        img.draft("L", (LADO_MINIATURA * 4, LADO_MINIATURA * 4))
+        mini = _cinza(img).resize((LADO_MINIATURA, LADO_MINIATURA), Image.Resampling.LANCZOS)
+    # leve desfoque: tira o serrilhado que muda conforme o tamanho original,
+    # sem apagar mudanças reais (braço que mexeu, câmera que tremeu)
+    return mini.filter(ImageFilter.GaussianBlur(1))
+
+
+def diferenca_visual(a: Image.Image, b: Image.Image) -> float:
+    """Maior diferença média (0-255) entre blocos correspondentes das miniaturas."""
+    from PIL import ImageChops
+
+    dif = ImageChops.difference(a, b)
+    n = LADO_MINIATURA // LADO_BLOCO
+    blocos = dif.resize((n, n), Image.Resampling.BOX)
+    return float(max(blocos.tobytes()))
+
 
 def _hamming(a: int, b: int) -> int:
     return (a ^ b).bit_count()
@@ -238,12 +286,13 @@ class _ArvoreBK:
         return achados
 
 
-def agrupar(infos: list[InfoImagem], limite: int | None = SENSIBILIDADE["normal"]) -> list[Grupo]:
+def agrupar(infos: list[InfoImagem], limite: float | None = SENSIBILIDADE["normal"]) -> list[Grupo]:
     """Agrupa imagens duplicadas.
 
-    ``limite=None`` desliga a comparação perceptual (só cópias idênticas).
-    Duas imagens são consideradas iguais pelo modo perceptual quando o dHash
-    E o aHash ficam dentro do limite, o que reduz muito os falsos positivos.
+    ``limite=None`` desliga a comparação visual (só cópias idênticas).
+    Caso contrário, duas imagens são a mesma foto quando: têm a mesma
+    proporção, os hashes de 64 bits são próximos E nenhum bloco das
+    miniaturas difere mais que ``limite``.
     """
     validas = [i for i in infos if not i.erro]
     n = len(validas)
@@ -259,13 +308,30 @@ def agrupar(infos: list[InfoImagem], limite: int | None = SENSIBILIDADE["normal"
 
     # 2) semelhantes por hash perceptual
     if limite is not None:
+        miniaturas: dict[int, Image.Image | None] = {}
+
+        def mini(i: int) -> Image.Image | None:
+            if i not in miniaturas:
+                try:
+                    miniaturas[i] = miniatura(validas[i].caminho)
+                except Exception:
+                    miniaturas[i] = None
+            return miniaturas[i]
+
         arvore = _ArvoreBK()
         for idx, info in enumerate(validas):
             if info.dhash is None:
                 continue
-            for j in arvore.buscar(info.dhash, limite):
+            for j in arvore.buscar(info.dhash, LIMITE_CANDIDATAS):
                 outro = validas[j]
-                if _hamming(info.ahash, outro.ahash) <= limite:
+                if uf.achar(j) == uf.achar(idx):
+                    continue
+                if _hamming(info.ahash, outro.ahash) > LIMITE_CANDIDATAS:
+                    continue
+                if abs(info.proporcao - outro.proporcao) > TOLERANCIA_PROPORCAO * max(info.proporcao, outro.proporcao):
+                    continue
+                ma, mb = mini(idx), mini(j)
+                if ma is not None and mb is not None and diferenca_visual(ma, mb) <= limite:
                     uf.unir(j, idx)
             arvore.inserir(info.dhash, idx)
 
@@ -291,7 +357,7 @@ def agrupar(infos: list[InfoImagem], limite: int | None = SENSIBILIDADE["normal"
 
 def procurar_duplicadas(
     pastas: Iterable[str | os.PathLike],
-    limite: int | None = SENSIBILIDADE["normal"],
+    limite: float | None = SENSIBILIDADE["normal"],
     progresso: Callable[[int, int, Path], None] | None = None,
     cancelar: Callable[[], bool] | None = None,
     ignorar: Iterable[str] = (),

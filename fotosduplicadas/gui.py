@@ -17,10 +17,10 @@ from . import nucleo
 
 MARCADO, DESMARCADO = "☑", "☐"
 OPCOES_SENS = {
-    "Rigorosa (só a mesma foto)": nucleo.SENSIBILIDADE["rigorosa"],
+    "Somente cópias idênticas (byte a byte)": None,
+    "Rigorosa (mesma foto, outro formato/tamanho)": nucleo.SENSIBILIDADE["rigorosa"],
     "Normal (recomendado)": nucleo.SENSIBILIDADE["normal"],
-    "Ampla (pega edições leves)": nucleo.SENSIBILIDADE["ampla"],
-    "Somente cópias idênticas": None,
+    "Ampla (compressão pesada; revise com cuidado)": nucleo.SENSIBILIDADE["ampla"],
 }
 
 
@@ -55,8 +55,8 @@ class App(tk.Tk):
         ttk.Button(topo, text="Remover", command=self._rem_pasta).grid(row=2, column=1, sticky="ew")
 
         ttk.Label(topo, text="Sensibilidade:").grid(row=1, column=2, padx=(12, 4), sticky="e")
-        self.sens = ttk.Combobox(topo, values=list(OPCOES_SENS), state="readonly", width=28)
-        self.sens.current(1)
+        self.sens = ttk.Combobox(topo, values=list(OPCOES_SENS), state="readonly", width=44)
+        self.sens.current(2)
         self.sens.grid(row=1, column=3, sticky="w")
         self.btn_procurar = ttk.Button(topo, text="🔍 Procurar duplicadas", command=self._procurar)
         self.btn_procurar.grid(row=2, column=2, columnspan=2, sticky="ew", padx=(12, 0))
