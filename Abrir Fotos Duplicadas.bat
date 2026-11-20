@@ -15,4 +15,5 @@ if not exist ".venv\Scripts\python.exe" (
   rem opcional: suporte a fotos .heic do iPhone
   ".venv\Scripts\python.exe" -m pip install --quiet pillow-heif >nul 2>nul
 )
+".venv\Scripts\python.exe" -c "import PySide6" >nul 2>nul || ".venv\Scripts\python.exe" -m pip install --quiet -r requirements.txt
 start "" ".venv\Scripts\pythonw.exe" -m fotosduplicadas

@@ -1,21 +1,29 @@
-"""Interface gráfica (Tkinter) do detector de fotos duplicadas."""
+"""Interface gráfica do Fotos Duplicadas (PySide6), com visual "Liquid Glass".
+
+O efeito de vidro é desenhado pelo próprio programa: um fundo com manchas de
+cor suaves e painéis translúcidos que mostram uma versão desfocada desse fundo,
+com brilho na borda superior e contorno claro. Funciona em qualquer Windows.
+"""
 
 from __future__ import annotations
 
 import os
-import queue
 import subprocess
 import sys
-import threading
-import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
 
-from PIL import Image, ImageOps, ImageTk
+from PIL import Image, ImageOps
+from PySide6.QtCore import QObject, QPointF, QRectF, QSize, Qt, QThread, Signal
+from PySide6.QtGui import (QBrush, QColor, QFont, QIcon, QImage, QLinearGradient, QPainter,
+                           QPainterPath, QPen, QPixmap, QRadialGradient)
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QFileDialog,
+                               QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QHeaderView,
+                               QLabel, QListWidget, QMainWindow, QMessageBox, QProgressBar,
+                               QPushButton, QSizePolicy, QSplitter, QTreeWidget,
+                               QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from . import nucleo
 
-MARCADO, DESMARCADO = "☑", "☐"
 OPCOES_SENS = {
     "Somente cópias idênticas (byte a byte)": None,
     "Rigorosa (mesma foto, outro formato/tamanho)": nucleo.SENSIBILIDADE["rigorosa"],
@@ -23,237 +31,589 @@ OPCOES_SENS = {
     "Ampla (compressão pesada; revise com cuidado)": nucleo.SENSIBILIDADE["ampla"],
 }
 
+RAIO = 22
 
-class App(tk.Tk):
+ESTILO = """
+* { color: #F4F7FF; font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Inter', sans-serif; font-size: 10pt; }
+QLabel#titulo { font-size: 20pt; font-weight: 600; }
+QLabel#subtitulo { color: rgba(244,247,255,0.70); }
+QLabel#rotulo { color: rgba(244,247,255,0.75); font-weight: 600; }
+QLabel#status, QLabel#detalhe, QLabel#resumo { color: rgba(244,247,255,0.85); }
+
+QPushButton {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.28);
+    border-radius: 16px; padding: 7px 16px;
+}
+QPushButton:hover { background: rgba(255,255,255,0.22); }
+QPushButton:pressed { background: rgba(255,255,255,0.08); }
+QPushButton:disabled { color: rgba(244,247,255,0.35); }
+QPushButton#destaque {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(120,170,255,0.85), stop:1 rgba(170,110,255,0.85));
+    border: 1px solid rgba(255,255,255,0.45); font-weight: 600;
+}
+QPushButton#destaque:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(140,185,255,0.95), stop:1 rgba(185,130,255,0.95));
+}
+
+QListWidget, QTreeWidget {
+    background: rgba(10,14,35,0.22);
+    border: 1px solid rgba(255,255,255,0.14); border-radius: 14px; padding: 4px;
+    outline: 0;
+}
+QTreeWidget::item, QListWidget::item { padding: 4px 2px; border-radius: 8px; }
+QTreeWidget::item:selected, QListWidget::item:selected { background: rgba(140,180,255,0.35); }
+QTreeWidget::item:hover, QListWidget::item:hover { background: rgba(255,255,255,0.08); }
+QTreeView::branch:selected, QTreeView::branch:hover { background: transparent; }
+QHeaderView { background: transparent; border: none; }
+QHeaderView::section {
+    background: transparent; color: rgba(244,247,255,0.70); font-weight: 600;
+    border: none; border-bottom: 1px solid rgba(255,255,255,0.15); padding: 6px 4px;
+}
+QTreeWidget::indicator { width: 16px; height: 16px; border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.55); background: rgba(255,255,255,0.08); }
+QTreeWidget::indicator:checked { border: 1px solid rgba(255,255,255,0.8);
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #7FB2FF, stop:1 #C08CFF);
+    image: url(%MARCA%); }
+
+QComboBox {
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.28);
+    border-radius: 14px; padding: 6px 14px;
+}
+QComboBox::drop-down { border: none; width: 24px; }
+QComboBox QAbstractItemView {
+    background: #1d2347; border: 1px solid rgba(255,255,255,0.25); border-radius: 10px;
+    selection-background-color: rgba(140,180,255,0.45); padding: 4px;
+}
+
+QProgressBar {
+    background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 7px; height: 14px; text-align: center; color: transparent;
+}
+QProgressBar::chunk {
+    border-radius: 6px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7FB2FF, stop:1 #C08CFF);
+}
+
+QSplitter::handle { background: transparent; width: 12px; }
+QScrollBar:vertical { background: transparent; width: 10px; margin: 4px; }
+QScrollBar::handle:vertical { background: rgba(255,255,255,0.25); border-radius: 4px; min-height: 30px; }
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 4px; }
+QScrollBar::handle:horizontal { background: rgba(255,255,255,0.25); border-radius: 4px; min-width: 30px; }
+QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page { background: none; border: none; }
+QToolTip { background: #1d2347; color: white; border: 1px solid rgba(255,255,255,0.3); }
+"""
+
+
+# --------------------------------------------------------------------------
+# Fundo "líquido" e painéis de vidro
+# --------------------------------------------------------------------------
+
+class FundoLiquido(QWidget):
+    """Fundo com manchas de cor; guarda também uma versão desfocada para o vidro."""
+
+    MANCHAS = [  # (x, y, raio relativo, cor)
+        (0.12, 0.18, 0.55, QColor(70, 120, 255)),
+        (0.88, 0.12, 0.50, QColor(190, 80, 255)),
+        (0.75, 0.90, 0.60, QColor(0, 200, 200)),
+        (0.20, 0.95, 0.45, QColor(255, 90, 160)),
+        (0.50, 0.50, 0.40, QColor(90, 70, 220)),
+    ]
+
     def __init__(self) -> None:
         super().__init__()
-        self.title("Fotos Duplicadas")
-        self.geometry("1150x720")
-        self.minsize(900, 560)
+        self.fundo = QPixmap()
+        self.desfocado = QPixmap()
 
-        self.pastas: list[str] = []
+    def _desenhar(self, tamanho: QSize) -> QImage:
+        img = QImage(tamanho, QImage.Format.Format_ARGB32_Premultiplied)
+        p = QPainter(img)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        g = QLinearGradient(0, 0, tamanho.width(), tamanho.height())
+        g.setColorAt(0, QColor(14, 18, 48))
+        g.setColorAt(1, QColor(28, 14, 52))
+        p.fillRect(img.rect(), g)
+        lado = max(tamanho.width(), tamanho.height())
+        for x, y, r, cor in self.MANCHAS:
+            c = QPointF(x * tamanho.width(), y * tamanho.height())
+            rg = QRadialGradient(c, r * lado)
+            c1, c2 = QColor(cor), QColor(cor)
+            c1.setAlpha(170)
+            c2.setAlpha(0)
+            rg.setColorAt(0, c1)
+            rg.setColorAt(1, c2)
+            p.setBrush(QBrush(rg))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(c, r * lado, r * lado)
+        p.end()
+        return img
+
+    def resizeEvent(self, ev) -> None:  # noqa: N802
+        img = self._desenhar(self.size())
+        self.fundo = QPixmap.fromImage(img)
+        # desfoque barato e bonito: reduz muito e amplia suavemente
+        pequeno = img.scaled(max(1, img.width() // 24), max(1, img.height() // 24),
+                             Qt.AspectRatioMode.IgnoreAspectRatio,
+                             Qt.TransformationMode.SmoothTransformation)
+        self.desfocado = QPixmap.fromImage(pequeno.scaled(
+            img.size(), Qt.AspectRatioMode.IgnoreAspectRatio,
+            Qt.TransformationMode.SmoothTransformation))
+        for painel in self.findChildren(PainelVidro):
+            painel.update()
+        super().resizeEvent(ev)
+
+    def paintEvent(self, _ev) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.drawPixmap(0, 0, self.fundo)
+
+
+class PainelVidro(QFrame):
+    """Painel translúcido com fundo desfocado, brilho e borda clara."""
+
+    def __init__(self, fundo: FundoLiquido, raio: int = RAIO) -> None:
+        super().__init__()
+        self.fundo_ref = fundo
+        self.raio = raio
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+        sombra = QGraphicsDropShadowEffect(self)
+        sombra.setBlurRadius(40)
+        sombra.setOffset(0, 10)
+        sombra.setColor(QColor(0, 0, 0, 90))
+        self.setGraphicsEffect(sombra)
+
+    def paintEvent(self, _ev) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        caminho = QPainterPath()
+        caminho.addRoundedRect(r, self.raio, self.raio)
+        p.setClipPath(caminho)
+
+        # 1) o que está "atrás" do vidro, desfocado
+        origem = self.mapTo(self.fundo_ref, self.rect().topLeft())
+        if not self.fundo_ref.desfocado.isNull():
+            p.drawPixmap(0, 0, self.fundo_ref.desfocado,
+                         origem.x(), origem.y(), self.width(), self.height())
+        # 2) leve tom branco (vidro fosco)
+        p.fillRect(self.rect(), QColor(255, 255, 255, 30))
+        # 3) brilho "líquido" na parte de cima
+        brilho = QLinearGradient(0, 0, 0, self.height())
+        brilho.setColorAt(0.0, QColor(255, 255, 255, 60))
+        brilho.setColorAt(0.25, QColor(255, 255, 255, 12))
+        brilho.setColorAt(1.0, QColor(255, 255, 255, 0))
+        p.fillRect(self.rect(), brilho)
+        p.setClipping(False)
+        # 4) contorno: mais claro em cima, sumindo embaixo
+        borda = QLinearGradient(0, 0, 0, self.height())
+        borda.setColorAt(0, QColor(255, 255, 255, 140))
+        borda.setColorAt(1, QColor(255, 255, 255, 35))
+        p.setPen(QPen(QBrush(borda), 1.2))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPath(caminho)
+
+
+# --------------------------------------------------------------------------
+# Prévia que sempre mostra a foto inteira
+# --------------------------------------------------------------------------
+
+class Previa(QLabel):
+    def __init__(self) -> None:
+        super().__init__("Selecione um arquivo\npara ver a prévia")
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMinimumSize(200, 200)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.setStyleSheet("color: rgba(244,247,255,0.6);")
+        self._original: QPixmap | None = None
+
+    def mostrar(self, caminho: Path | None) -> None:
+        self._original = None
+        if caminho is None:
+            self.setPixmap(QPixmap())
+            self.setText("Selecione um arquivo\npara ver a prévia")
+            return
+        try:
+            with Image.open(caminho) as img:
+                img.draft("RGB", (1600, 1600))
+                img = ImageOps.exif_transpose(img)  # foto em pé fica em pé
+                img.thumbnail((1600, 1600))
+                img = img.convert("RGBA")
+                dados = img.tobytes("raw", "RGBA")
+                qimg = QImage(dados, img.width, img.height, img.width * 4,
+                              QImage.Format.Format_RGBA8888).copy()
+            self._original = QPixmap.fromImage(qimg)
+            self.setText("")
+            self._ajustar()
+        except Exception as e:
+            self.setPixmap(QPixmap())
+            self.setText(f"Sem prévia:\n{e}")
+
+    def _ajustar(self) -> None:
+        if not self._original:
+            return
+        dpr = self.devicePixelRatioF()
+        alvo = self.size() * dpr
+        pm = self._original.scaled(alvo, Qt.AspectRatioMode.KeepAspectRatio,
+                                   Qt.TransformationMode.SmoothTransformation)
+        # cantos arredondados na foto
+        final = QPixmap(pm.size())
+        final.fill(Qt.GlobalColor.transparent)
+        p = QPainter(final)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        c = QPainterPath()
+        c.addRoundedRect(QRectF(final.rect()), 14 * dpr, 14 * dpr)
+        p.setClipPath(c)
+        p.drawPixmap(0, 0, pm)
+        p.end()
+        final.setDevicePixelRatio(dpr)
+        self.setPixmap(final)
+
+    def resizeEvent(self, ev) -> None:  # noqa: N802
+        super().resizeEvent(ev)
+        self._ajustar()
+
+
+# --------------------------------------------------------------------------
+# Busca em segundo plano
+# --------------------------------------------------------------------------
+
+class Trabalhador(QObject):
+    progresso = Signal(int, int, str)
+    terminou = Signal(object, object)
+    falhou = Signal(str)
+
+    def __init__(self, pastas: list[str], limite) -> None:
+        super().__init__()
+        self.pastas, self.limite = pastas, limite
+        self.cancelar = False
+
+    def rodar(self) -> None:
+        try:
+            grupos, erros = nucleo.procurar_duplicadas(
+                self.pastas, self.limite,
+                lambda n, t, c: self.progresso.emit(n, t, str(c)),
+                lambda: self.cancelar)
+            self.terminou.emit(grupos, erros)
+        except Exception as e:  # pragma: no cover
+            self.falhou.emit(str(e))
+
+
+# --------------------------------------------------------------------------
+# Janela principal
+# --------------------------------------------------------------------------
+
+def _botao(texto: str, destaque: bool = False) -> QPushButton:
+    b = QPushButton(texto)
+    b.setCursor(Qt.CursorShape.PointingHandCursor)
+    if destaque:
+        b.setObjectName("destaque")
+    return b
+
+
+class Janela(QMainWindow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("Fotos Duplicadas")
+        self.resize(1280, 800)
+        self.setMinimumSize(980, 620)
+        self.setAcceptDrops(True)
+
         self.grupos: list[nucleo.Grupo] = []
-        self.item_info: dict[str, nucleo.InfoImagem] = {}
-        self.item_grupo: dict[str, nucleo.Grupo] = {}
-        self.marcados: set[str] = set()
-        self.fila: queue.Queue = queue.Queue()
-        self._cancelar = False
-        self._thumb = None
+        self.thread: QThread | None = None
+        self.trab: Trabalhador | None = None
 
-        self._montar()
-        self.after(100, self._processar_fila)
+        self.fundo = FundoLiquido()
+        self.setCentralWidget(self.fundo)
+        raiz = QVBoxLayout(self.fundo)
+        raiz.setContentsMargins(22, 18, 22, 20)
+        raiz.setSpacing(16)
 
-    # ------------------------------------------------------------------ layout
-    def _montar(self) -> None:
-        topo = ttk.Frame(self, padding=8)
-        topo.pack(fill="x")
+        # ---- cabeçalho
+        cab = QHBoxLayout()
+        tit = QVBoxLayout()
+        tit.setSpacing(0)
+        t = QLabel("Fotos Duplicadas")
+        t.setObjectName("titulo")
+        s = QLabel("Encontre a mesma foto, mesmo com outro nome, formato ou tamanho. Nada é apagado.")
+        s.setObjectName("subtitulo")
+        tit.addWidget(t)
+        tit.addWidget(s)
+        cab.addLayout(tit)
+        cab.addStretch()
+        raiz.addLayout(cab)
 
-        ttk.Label(topo, text="Pastas a analisar:").grid(row=0, column=0, sticky="w")
-        self.lista_pastas = tk.Listbox(topo, height=3)
-        self.lista_pastas.grid(row=1, column=0, rowspan=2, sticky="nsew", padx=(0, 6))
-        ttk.Button(topo, text="Adicionar pasta…", command=self._add_pasta).grid(row=1, column=1, sticky="ew")
-        ttk.Button(topo, text="Remover", command=self._rem_pasta).grid(row=2, column=1, sticky="ew")
+        # ---- painel de pastas e busca
+        topo = PainelVidro(self.fundo)
+        lt = QHBoxLayout(topo)
+        lt.setContentsMargins(18, 16, 18, 16)
+        lt.setSpacing(16)
 
-        ttk.Label(topo, text="Sensibilidade:").grid(row=1, column=2, padx=(12, 4), sticky="e")
-        self.sens = ttk.Combobox(topo, values=list(OPCOES_SENS), state="readonly", width=44)
-        self.sens.current(2)
-        self.sens.grid(row=1, column=3, sticky="w")
-        self.btn_procurar = ttk.Button(topo, text="🔍 Procurar duplicadas", command=self._procurar)
-        self.btn_procurar.grid(row=2, column=2, columnspan=2, sticky="ew", padx=(12, 0))
-        topo.columnconfigure(0, weight=1)
+        col_pastas = QVBoxLayout()
+        rp = QLabel("PASTAS A ANALISAR  ·  arraste pastas para cá")
+        rp.setObjectName("rotulo")
+        self.lista_pastas = QListWidget()
+        self.lista_pastas.setFixedHeight(78)
+        self.lista_pastas.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        col_pastas.addWidget(rp)
+        col_pastas.addWidget(self.lista_pastas)
+        lt.addLayout(col_pastas, 3)
 
-        prog = ttk.Frame(self, padding=(8, 0))
-        prog.pack(fill="x")
-        self.barra = ttk.Progressbar(prog, mode="determinate")
-        self.barra.pack(fill="x", side="left", expand=True)
-        self.status = ttk.Label(prog, text="Adicione uma ou mais pastas e clique em Procurar.", width=60)
-        self.status.pack(side="left", padx=8)
+        col_bp = QVBoxLayout()
+        col_bp.addStretch()
+        b_add = _botao("＋  Adicionar pasta")
+        b_add.clicked.connect(self._add_pasta)
+        b_rem = _botao("Remover")
+        b_rem.clicked.connect(self._rem_pasta)
+        col_bp.addWidget(b_add)
+        col_bp.addWidget(b_rem)
+        lt.addLayout(col_bp)
 
-        meio = ttk.PanedWindow(self, orient="horizontal")
-        meio.pack(fill="both", expand=True, padx=8, pady=8)
+        col_busca = QVBoxLayout()
+        rs = QLabel("SENSIBILIDADE")
+        rs.setObjectName("rotulo")
+        self.sens = QComboBox()
+        self.sens.addItems(list(OPCOES_SENS))
+        self.sens.setCurrentIndex(2)
+        self.btn_procurar = _botao("🔍  Procurar duplicadas", destaque=True)
+        self.btn_procurar.setMinimumHeight(38)
+        self.btn_procurar.clicked.connect(self._procurar)
+        col_busca.addWidget(rs)
+        col_busca.addWidget(self.sens)
+        col_busca.addWidget(self.btn_procurar)
+        lt.addLayout(col_busca, 2)
+        raiz.addWidget(topo)
 
-        esq = ttk.Frame(meio)
-        cols = ("marcar", "formato", "dimensoes", "tamanho", "pasta")
-        self.arvore = ttk.Treeview(esq, columns=cols, selectmode="browse")
-        self.arvore.heading("#0", text="Arquivo")
-        self.arvore.heading("marcar", text="Mover?")
-        self.arvore.heading("formato", text="Formato")
-        self.arvore.heading("dimensoes", text="Dimensões")
-        self.arvore.heading("tamanho", text="Tamanho")
-        self.arvore.heading("pasta", text="Pasta")
-        self.arvore.column("#0", width=230)
-        self.arvore.column("marcar", width=60, anchor="center")
-        self.arvore.column("formato", width=65, anchor="center")
-        self.arvore.column("dimensoes", width=90, anchor="center")
-        self.arvore.column("tamanho", width=75, anchor="e")
-        self.arvore.column("pasta", width=260)
-        sb = ttk.Scrollbar(esq, orient="vertical", command=self.arvore.yview)
-        self.arvore.configure(yscrollcommand=sb.set)
-        self.arvore.pack(side="left", fill="both", expand=True)
-        sb.pack(side="left", fill="y")
-        self.arvore.bind("<<TreeviewSelect>>", self._ao_selecionar)
-        self.arvore.bind("<Button-1>", self._ao_clicar)
-        self.arvore.bind("<space>", lambda e: self._alternar(self.arvore.focus()))
-        self.arvore.bind("<Double-1>", lambda e: self._abrir_arquivo())
-        self.arvore.tag_configure("grupo", background="#e8eef7")
-        meio.add(esq, weight=3)
+        # ---- progresso
+        lp = QHBoxLayout()
+        self.barra = QProgressBar()
+        self.barra.setFixedHeight(14)
+        self.status = QLabel("Adicione uma ou mais pastas e clique em Procurar.")
+        self.status.setObjectName("status")
+        self.status.setMinimumWidth(420)
+        lp.addWidget(self.barra, 1)
+        lp.addWidget(self.status)
+        raiz.addLayout(lp)
 
-        dir_ = ttk.Frame(meio, padding=6)
-        self.preview = ttk.Label(dir_, anchor="center", text="Selecione um arquivo\npara ver a prévia")
-        self.preview.pack(fill="both", expand=True)
-        self.detalhe = ttk.Label(dir_, wraplength=320, justify="left")
-        self.detalhe.pack(fill="x", pady=(6, 0))
-        bts = ttk.Frame(dir_)
-        bts.pack(fill="x", pady=4)
-        ttk.Button(bts, text="Abrir imagem", command=self._abrir_arquivo).pack(side="left")
-        ttk.Button(bts, text="Abrir pasta", command=self._abrir_pasta).pack(side="left", padx=4)
-        meio.add(dir_, weight=2)
+        # ---- meio: lista de grupos + prévia
+        div = QSplitter(Qt.Orientation.Horizontal)
+        div.setChildrenCollapsible(False)
 
-        base = ttk.Frame(self, padding=8)
-        base.pack(fill="x")
-        ttk.Button(base, text="Marcar sugeridas", command=self._marcar_sugeridas).pack(side="left")
-        ttk.Button(base, text="Desmarcar todas", command=self._desmarcar_todas).pack(side="left", padx=4)
-        ttk.Button(base, text="Exportar relatório (CSV)…", command=self._exportar).pack(side="left", padx=4)
-        self.btn_mover = ttk.Button(base, text="Mover marcadas para outra pasta…", command=self._mover)
-        self.btn_mover.pack(side="right")
-        self.resumo = ttk.Label(base, text="")
-        self.resumo.pack(side="right", padx=10)
+        p_lista = PainelVidro(self.fundo)
+        ll = QVBoxLayout(p_lista)
+        ll.setContentsMargins(14, 14, 14, 14)
+        self.arvore = QTreeWidget()
+        self.arvore.setHeaderLabels(["Arquivo", "Formato", "Dimensões", "Tamanho", "Pasta"])
+        self.arvore.setAlternatingRowColors(False)
+        self.arvore.setRootIsDecorated(True)
+        self.arvore.setUniformRowHeights(True)
+        h = self.arvore.header()
+        h.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        h.resizeSection(0, 300)
+        for c, w in ((1, 70), (2, 100), (3, 80)):
+            h.resizeSection(c, w)
+        h.setStretchLastSection(True)
+        self.arvore.currentItemChanged.connect(self._ao_selecionar)
+        self.arvore.itemChanged.connect(lambda *_: self._atualizar_resumo())
+        self.arvore.itemDoubleClicked.connect(lambda *_: self._abrir_arquivo())
+        ll.addWidget(self.arvore)
+        div.addWidget(p_lista)
 
-    # ------------------------------------------------------------------ pastas
+        p_prev = PainelVidro(self.fundo)
+        lv = QVBoxLayout(p_prev)
+        lv.setContentsMargins(16, 16, 16, 16)
+        self.previa = Previa()
+        lv.addWidget(self.previa, 1)
+        self.detalhe = QLabel("")
+        self.detalhe.setObjectName("detalhe")
+        self.detalhe.setWordWrap(True)
+        self.detalhe.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        lv.addWidget(self.detalhe)
+        lb = QHBoxLayout()
+        b1 = _botao("Abrir imagem")
+        b1.clicked.connect(self._abrir_arquivo)
+        b2 = _botao("Mostrar na pasta")
+        b2.clicked.connect(self._abrir_pasta)
+        lb.addWidget(b1)
+        lb.addWidget(b2)
+        lb.addStretch()
+        lv.addLayout(lb)
+        div.addWidget(p_prev)
+        div.setStretchFactor(0, 3)
+        div.setStretchFactor(1, 2)
+        div.setSizes([760, 480])
+        raiz.addWidget(div, 1)
+
+        # ---- rodapé
+        base = PainelVidro(self.fundo, raio=20)
+        lr = QHBoxLayout(base)
+        lr.setContentsMargins(14, 10, 14, 10)
+        for texto, fn in (("Marcar sugeridas", self._marcar_sugeridas),
+                          ("Desmarcar todas", self._desmarcar_todas),
+                          ("Exportar relatório (CSV)", self._exportar)):
+            b = _botao(texto)
+            b.clicked.connect(fn)
+            lr.addWidget(b)
+        lr.addStretch()
+        self.resumo = QLabel("")
+        self.resumo.setObjectName("resumo")
+        lr.addWidget(self.resumo)
+        self.btn_mover = _botao("Mover marcadas para outra pasta…", destaque=True)
+        self.btn_mover.clicked.connect(self._mover)
+        lr.addWidget(self.btn_mover)
+        raiz.addWidget(base)
+
+    # ------------------------------------------------------------- pastas
+    def _pastas(self) -> list[str]:
+        return [self.lista_pastas.item(i).text() for i in range(self.lista_pastas.count())]
+
+    def _incluir_pasta(self, p: str) -> None:
+        p = os.path.normpath(p)
+        if p and p not in self._pastas():
+            self.lista_pastas.addItem(p)
+
     def _add_pasta(self) -> None:
-        p = filedialog.askdirectory(title="Escolha uma pasta com fotos")
-        if p and p not in self.pastas:
-            self.pastas.append(p)
-            self.lista_pastas.insert("end", p)
+        p = QFileDialog.getExistingDirectory(self, "Escolha uma pasta com fotos")
+        if p:
+            self._incluir_pasta(p)
 
     def _rem_pasta(self) -> None:
-        for idx in reversed(self.lista_pastas.curselection()):
-            self.lista_pastas.delete(idx)
-            del self.pastas[idx]
+        for it in self.lista_pastas.selectedItems():
+            self.lista_pastas.takeItem(self.lista_pastas.row(it))
 
-    # ------------------------------------------------------------------ busca
+    def dragEnterEvent(self, ev) -> None:  # noqa: N802
+        if ev.mimeData().hasUrls():
+            ev.acceptProposedAction()
+
+    def dropEvent(self, ev) -> None:  # noqa: N802
+        for url in ev.mimeData().urls():
+            p = url.toLocalFile()
+            if os.path.isdir(p):
+                self._incluir_pasta(p)
+
+    # ------------------------------------------------------------- busca
     def _procurar(self) -> None:
-        if self.btn_procurar.cget("text").startswith("Cancelar"):
-            self._cancelar = True
+        if self.trab is not None:
+            self.trab.cancelar = True
+            self.status.setText("Cancelando…")
             return
-        if not self.pastas:
-            messagebox.showinfo("Fotos Duplicadas", "Adicione pelo menos uma pasta.")
+        pastas = self._pastas()
+        if not pastas:
+            QMessageBox.information(self, "Fotos Duplicadas", "Adicione pelo menos uma pasta.")
             return
-        self._cancelar = False
-        self.btn_procurar.configure(text="Cancelar")
-        self.arvore.delete(*self.arvore.get_children())
-        self.item_info.clear()
-        self.marcados.clear()
-        limite = OPCOES_SENS[self.sens.get()]
-        self.status.configure(text="Listando arquivos…")
-        threading.Thread(target=self._trabalho, args=(list(self.pastas), limite), daemon=True).start()
+        self.arvore.clear()
+        self.previa.mostrar(None)
+        self.detalhe.setText("")
+        self.barra.setValue(0)
+        self.status.setText("Listando arquivos…")
+        self.btn_procurar.setText("Cancelar")
+        self.thread = QThread(self)
+        self.trab = Trabalhador(pastas, OPCOES_SENS[self.sens.currentText()])
+        self.trab.moveToThread(self.thread)
+        self.thread.started.connect(self.trab.rodar)
+        self.trab.progresso.connect(self._progresso)
+        self.trab.terminou.connect(self._terminou)
+        self.trab.falhou.connect(self._falhou)
+        self.thread.start()
 
-    def _trabalho(self, pastas: list[str], limite) -> None:
-        try:
-            def prog(n, total, caminho):
-                self.fila.put(("progresso", n, total, caminho))
-            grupos, erros = nucleo.procurar_duplicadas(pastas, limite, prog, lambda: self._cancelar)
-            self.fila.put(("fim", grupos, erros))
-        except Exception as e:  # pragma: no cover
-            self.fila.put(("erro", e))
+    def _progresso(self, n: int, total: int, caminho: str) -> None:
+        self.barra.setMaximum(max(total, 1))
+        self.barra.setValue(n)
+        self.status.setText(f"Analisando {n} de {total}: {Path(caminho).name}")
 
-    def _processar_fila(self) -> None:
-        try:
-            ultimo = None
-            while True:
-                msg = self.fila.get_nowait()
-                if msg[0] == "progresso":
-                    ultimo = msg
-                else:
-                    self._tratar(msg)
-        except queue.Empty:
-            pass
-        if ultimo:
-            _, n, total, caminho = ultimo
-            self.barra.configure(maximum=max(total, 1), value=n)
-            self.status.configure(text=f"Analisando {n} de {total}: {Path(caminho).name}")
-        self.after(100, self._processar_fila)
+    def _encerrar_thread(self) -> bool:
+        cancelado = bool(self.trab and self.trab.cancelar)
+        if self.thread:
+            self.thread.quit()
+            self.thread.wait()
+        self.thread, self.trab = None, None
+        self.btn_procurar.setText("🔍  Procurar duplicadas")
+        return cancelado
 
-    def _tratar(self, msg) -> None:
-        self.btn_procurar.configure(text="🔍 Procurar duplicadas")
-        if msg[0] == "erro":
-            messagebox.showerror("Erro", str(msg[1]))
-            return
-        _, grupos, erros = msg
+    def _falhou(self, msg: str) -> None:
+        self._encerrar_thread()
+        QMessageBox.critical(self, "Erro", msg)
+
+    def _terminou(self, grupos, erros) -> None:
+        cancelado = self._encerrar_thread()
         self.grupos = grupos
         self._preencher()
-        txt = (f"{'Cancelado. ' if self._cancelar else ''}{len(grupos)} grupos de duplicadas encontrados.")
+        txt = f"{'Cancelado. ' if cancelado else ''}{len(grupos)} grupos de duplicadas encontrados."
         if erros:
             txt += f" {len(erros)} arquivos não puderam ser lidos."
-        self.status.configure(text=txt)
+        self.status.setText(txt)
 
+    # ------------------------------------------------------------- lista
     def _preencher(self, marcar: bool = True) -> None:
-        self.arvore.delete(*self.arvore.get_children())
-        self.item_info.clear()
-        self.item_grupo.clear()
-        self.marcados.clear()
+        self.arvore.blockSignals(True)
+        self.arvore.clear()
+        negrito = QFont()
+        negrito.setBold(True)
         for n, g in enumerate(self.grupos, 1):
-            rotulo = (f"Grupo {n}: {len(g.itens)} arquivos "
-                      f"({'cópias idênticas' if g.tipo == 'idêntica' else 'mesma imagem'})")
-            gid = self.arvore.insert("", "end", text=rotulo, open=True, tags=("grupo",))
+            tipo = "cópias idênticas" if g.tipo == "idêntica" else "mesma imagem"
+            gi = QTreeWidgetItem([f"Grupo {n}  ·  {len(g.itens)} arquivos  ·  {tipo}"])
+            gi.setFirstColumnSpanned(True)
+            gi.setFont(0, negrito)
+            gi.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            self.arvore.addTopLevelItem(gi)
+            gi.setFirstColumnSpanned(True)
             for i in g.itens:
-                iid = self.arvore.insert(gid, "end", text=i.caminho.name, values=(
-                    DESMARCADO, i.formato, f"{i.largura}×{i.altura}",
-                    nucleo.tamanho_legivel(i.tamanho_bytes), str(i.caminho.parent)))
-                self.item_info[iid] = i
-                self.item_grupo[iid] = g
-        if marcar:
-            self._marcar_sugeridas()
+                it = QTreeWidgetItem([i.caminho.name, i.formato, f"{i.largura}×{i.altura}",
+                                      nucleo.tamanho_legivel(i.tamanho_bytes), str(i.caminho.parent)])
+                it.setData(0, Qt.ItemDataRole.UserRole, (g, i))
+                it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+                            | Qt.ItemFlag.ItemIsUserCheckable)
+                manter = i is g.manter
+                it.setCheckState(0, Qt.CheckState.Checked if (marcar and not manter) else Qt.CheckState.Unchecked)
+                it.setToolTip(0, "Sugestão: MANTER (maior resolução)" if manter else "Sugestão: mover")
+                if manter:
+                    it.setForeground(0, QColor(150, 230, 180))
+                gi.addChild(it)
+            gi.setExpanded(True)
+        self.arvore.blockSignals(False)
         self._atualizar_resumo()
 
-    # ------------------------------------------------------------------ marcação
-    def _set_marca(self, iid: str, marcar: bool) -> None:
-        if iid not in self.item_info:
-            return
-        (self.marcados.add if marcar else self.marcados.discard)(iid)
-        self.arvore.set(iid, "marcar", MARCADO if marcar else DESMARCADO)
+    def _itens(self):
+        for a in range(self.arvore.topLevelItemCount()):
+            gi = self.arvore.topLevelItem(a)
+            for b in range(gi.childCount()):
+                yield gi.child(b)
 
-    def _alternar(self, iid: str) -> None:
-        if iid in self.item_info:
-            self._set_marca(iid, iid not in self.marcados)
-            self._atualizar_resumo()
-
-    def _ao_clicar(self, ev) -> None:
-        if self.arvore.identify_column(ev.x) == "#1":
-            self._alternar(self.arvore.identify_row(ev.y))
+    def _marcados(self):
+        return [it for it in self._itens() if it.checkState(0) == Qt.CheckState.Checked]
 
     def _marcar_sugeridas(self) -> None:
-        for iid, info in self.item_info.items():
-            self._set_marca(iid, info is not self.item_grupo[iid].manter)
+        self.arvore.blockSignals(True)
+        for it in self._itens():
+            g, i = it.data(0, Qt.ItemDataRole.UserRole)
+            it.setCheckState(0, Qt.CheckState.Unchecked if i is g.manter else Qt.CheckState.Checked)
+        self.arvore.blockSignals(False)
         self._atualizar_resumo()
 
     def _desmarcar_todas(self) -> None:
-        for iid in list(self.marcados):
-            self._set_marca(iid, False)
+        self.arvore.blockSignals(True)
+        for it in self._itens():
+            it.setCheckState(0, Qt.CheckState.Unchecked)
+        self.arvore.blockSignals(False)
         self._atualizar_resumo()
 
     def _atualizar_resumo(self) -> None:
-        total = sum(self.item_info[i].tamanho_bytes for i in self.marcados)
-        self.resumo.configure(text=f"{len(self.marcados)} marcados ({nucleo.tamanho_legivel(total)})")
+        m = self._marcados()
+        total = sum(it.data(0, Qt.ItemDataRole.UserRole)[1].tamanho_bytes for it in m)
+        self.resumo.setText(f"{len(m)} marcados  ·  {nucleo.tamanho_legivel(total)}")
 
-    # ------------------------------------------------------------------ prévia
-    def _ao_selecionar(self, _ev=None) -> None:
-        iid = self.arvore.focus()
-        info = self.item_info.get(iid)
+    def _info_atual(self) -> nucleo.InfoImagem | None:
+        it = self.arvore.currentItem()
+        d = it.data(0, Qt.ItemDataRole.UserRole) if it else None
+        return d[1] if d else None
+
+    def _ao_selecionar(self, *_):
+        info = self._info_atual()
         if not info:
             return
-        try:
-            with Image.open(info.caminho) as img:
-                img = ImageOps.exif_transpose(img)
-                img.thumbnail((380, 380))
-                self._thumb = ImageTk.PhotoImage(img)
-            self.preview.configure(image=self._thumb, text="")
-        except Exception as e:
-            self.preview.configure(image="", text=f"Sem prévia: {e}")
-        self.detalhe.configure(text=(
-            f"{info.caminho}\n{info.formato} · {info.largura}×{info.altura} · "
-            f"{nucleo.tamanho_legivel(info.tamanho_bytes)}"))
+        self.previa.mostrar(info.caminho)
+        self.detalhe.setText(f"{info.caminho}\n{info.formato}  ·  {info.largura}×{info.altura}  ·  "
+                             f"{nucleo.tamanho_legivel(info.tamanho_bytes)}")
 
+    # ------------------------------------------------------------- abrir
     def _abrir(self, alvo: Path) -> None:
         if sys.platform.startswith("win"):
             os.startfile(alvo)  # type: ignore[attr-defined]
@@ -263,12 +623,12 @@ class App(tk.Tk):
             subprocess.Popen(["xdg-open", str(alvo)])
 
     def _abrir_arquivo(self) -> None:
-        info = self.item_info.get(self.arvore.focus())
+        info = self._info_atual()
         if info:
             self._abrir(info.caminho)
 
     def _abrir_pasta(self) -> None:
-        info = self.item_info.get(self.arvore.focus())
+        info = self._info_atual()
         if not info:
             return
         if sys.platform.startswith("win"):
@@ -276,44 +636,44 @@ class App(tk.Tk):
         else:
             self._abrir(info.caminho.parent)
 
-    # ------------------------------------------------------------------ ações
+    # ------------------------------------------------------------- ações
     def _exportar(self) -> None:
         if not self.grupos:
             return
-        arq = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")],
-                                           initialfile="duplicadas.csv")
+        arq, _ = QFileDialog.getSaveFileName(self, "Salvar relatório", "duplicadas.csv", "CSV (*.csv)")
         if arq:
             nucleo.exportar_csv(self.grupos, arq)
-            messagebox.showinfo("Fotos Duplicadas", f"Relatório salvo em:\n{arq}")
+            QMessageBox.information(self, "Fotos Duplicadas", f"Relatório salvo em:\n{arq}")
 
     def _mover(self) -> None:
-        if not self.marcados:
-            messagebox.showinfo("Fotos Duplicadas", "Nenhum arquivo marcado.")
+        marcados = self._marcados()
+        if not marcados:
+            QMessageBox.information(self, "Fotos Duplicadas", "Nenhum arquivo marcado.")
             return
-        # segurança: não deixar um grupo inteiro marcado (sobraria nenhuma cópia)
+        sel = [it.data(0, Qt.ItemDataRole.UserRole) for it in marcados]
         for g in self.grupos:
-            ids = [iid for iid, gg in self.item_grupo.items() if gg is g]
-            if ids and all(iid in self.marcados for iid in ids):
-                if not messagebox.askyesno(
-                        "Atenção",
-                        "Em pelo menos um grupo TODOS os arquivos estão marcados, "
-                        "então nenhuma cópia ficaria no lugar original.\n\nContinuar mesmo assim?"):
+            if all(any(i is s[1] for s in sel) for i in g.itens):
+                r = QMessageBox.question(
+                    self, "Atenção",
+                    "Em pelo menos um grupo TODOS os arquivos estão marcados, então nenhuma "
+                    "cópia ficaria no lugar original.\n\nContinuar mesmo assim?")
+                if r != QMessageBox.StandardButton.Yes:
                     return
                 break
-        destino = filedialog.askdirectory(title="Para qual pasta mover as duplicadas?")
+        destino = QFileDialog.getExistingDirectory(self, "Para qual pasta mover as duplicadas?")
         if not destino:
             return
-        total = sum(self.item_info[i].tamanho_bytes for i in self.marcados)
-        if not messagebox.askyesno(
-                "Confirmar",
-                f"Mover {len(self.marcados)} arquivos ({nucleo.tamanho_legivel(total)}) para:\n"
-                f"{destino}\n\nNada será apagado; você pode revisar e apagar depois."):
+        total = sum(i.tamanho_bytes for _, i in sel)
+        r = QMessageBox.question(
+            self, "Confirmar",
+            f"Mover {len(sel)} arquivos ({nucleo.tamanho_legivel(total)}) para:\n{destino}\n\n"
+            "Nada será apagado; você pode revisar e apagar depois.")
+        if r != QMessageBox.StandardButton.Yes:
             return
-        arquivos = [self.item_info[i].caminho for i in self.marcados]
         try:
-            movidos = nucleo.mover_para_pasta(arquivos, destino, raizes=self.pastas)
+            movidos = nucleo.mover_para_pasta([i.caminho for _, i in sel], destino, raizes=self._pastas())
         except Exception as e:
-            messagebox.showerror("Erro ao mover", str(e))
+            QMessageBox.critical(self, "Erro ao mover", str(e))
             return
         movidos_set = {o for o, _ in movidos}
         restantes = []
@@ -323,11 +683,73 @@ class App(tk.Tk):
                 restantes.append(nucleo.Grupo(itens=itens, tipo=g.tipo, distancia_max=g.distancia_max))
         self.grupos = restantes
         self._preencher(marcar=False)
-        messagebox.showinfo("Pronto", f"{len(movidos)} arquivos movidos para:\n{destino}")
+        self.previa.mostrar(None)
+        QMessageBox.information(self, "Pronto", f"{len(movidos)} arquivos movidos para:\n{destino}")
+
+
+def _marca_de_verificacao() -> str:
+    """Gera o desenho do ✓ usado nas caixas marcadas e devolve o caminho."""
+    import tempfile
+    caminho = Path(tempfile.gettempdir()) / "fotosduplicadas_marca.png"
+    pm = QPixmap(32, 32)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(QPen(QColor("white"), 4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
+                  Qt.PenJoinStyle.RoundJoin))
+    p.drawPolyline([QPointF(8, 17), QPointF(14, 23), QPointF(25, 10)])
+    p.end()
+    pm.save(str(caminho))
+    return caminho.as_posix()
+
+
+def _icone() -> QIcon:
+    pm = QPixmap(256, 256)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    g = QLinearGradient(0, 0, 256, 256)
+    g.setColorAt(0, QColor(120, 170, 255))
+    g.setColorAt(1, QColor(180, 110, 255))
+    p.setBrush(g)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.drawRoundedRect(QRectF(40, 20, 170, 170), 36, 36)
+    p.setBrush(QColor(255, 255, 255, 120))
+    p.setPen(QPen(QColor(255, 255, 255, 220), 4))
+    p.drawRoundedRect(QRectF(70, 70, 170, 170), 36, 36)
+    p.end()
+    return QIcon(pm)
 
 
 def main() -> None:
-    App().mainloop()
+    if sys.platform.startswith("win"):
+        try:  # ícone próprio na barra de tarefas
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("FotosDuplicadas.App")
+        except Exception:
+            pass
+    app = QApplication.instance() or QApplication(sys.argv)
+    app.setStyle("Fusion")
+    app.setStyleSheet(ESTILO.replace("%MARCA%", _marca_de_verificacao()))
+    app.setWindowIcon(_icone())
+    j = Janela()
+    j.show()
+    if sys.platform.startswith("win"):
+        _barra_escura(j)
+    app.exec()
+
+
+def _barra_escura(janela: QMainWindow) -> None:
+    """Deixa a barra de título escura no Windows 10/11 (combina com o vidro)."""
+    try:
+        import ctypes
+        hwnd = int(janela.winId())
+        valor = ctypes.c_int(1)
+        for attr in (20, 19):  # DWMWA_USE_IMMERSIVE_DARK_MODE (novo e antigo)
+            if ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(valor), 4) == 0:
+                break
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
